@@ -1,0 +1,5 @@
+requests==2.32.3
+snowflake-connector-python==3.12.2
+tenacity==9.0.0
+cryptography
+pyOpenSSL>=24.1.0
