@@ -63,6 +63,7 @@ def get_snowflake_connection():
 def fetch_github_events():
     headers = {
         "Accept": "application/vnd.github+json",
+        "User-Agent": "developer-metrics-platform",
         "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
     }
     response = requests.get(GITHUB_API_URL, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
