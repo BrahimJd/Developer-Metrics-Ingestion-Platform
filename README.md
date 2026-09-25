@@ -60,13 +60,24 @@ packages.txt               OS-level build dependencies
 
 ## Setup
 
-1. `astro dev init` prerequisites: [Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli), Docker.
-2. Copy `.env.example` to `.env` and fill in your own Snowflake/GitHub credentials.
-3. Generate an RSA key pair for Snowflake key-pair auth and register the
-   public key on your Snowflake service user (see `docs/snowflake-setup.md` —
-   *TODO: write this up*).
-4. `astro dev start`
-5. Open the Airflow UI, unpause `github_events_to_snowflake_bronze`, trigger a run.
+1. Install the [Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli) and Docker.
+2. Copy `.env.example` to `.env` and fill in your Snowflake and GitHub credentials.
+3. Generate an RSA key pair from the repository root. Keep the private key local and never commit it:
+   ```bash
+   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM \
+     -out include/secrets/snowflake_rsa_key.p8 -nocrypt
+   openssl rsa -in include/secrets/snowflake_rsa_key.p8 \
+     -pubout -out secrets/snowflake_rsa_key.pub
+   chmod 600 include/secrets/snowflake_rsa_key.p8
+   ```
+4. As a Snowflake administrator, register the public key for the service user. Copy the contents of `secrets/snowflake_rsa_key.pub` without the `BEGIN` and `END` lines:
+   ```sql
+   ALTER USER <SNOWFLAKE_USER> ADD KEY PAIR developer_metrics_pipeline
+     PUBLIC_KEY = '<public-key-body>';
+   ```
+   The private key must match the registered public key. The command above creates an unencrypted key, so leave `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` empty. If you use an encrypted private key, set its passphrase in `.env`.
+5. Run `astro dev start`.
+6. Open the Airflow UI, unpause `github_events_to_snowflake_bronze`, and trigger a run.
 
 ## Roadmap
 
@@ -78,7 +89,3 @@ packages.txt               OS-level build dependencies
 - [ ] Wire dbt into Airflow (Cosmos or `BashOperator`)
 - [ ] dbt tests + source freshness checks in CI
 - [ ] Dashboard / BI layer on top of Gold
-
-## License
-
-*(add one, e.g. MIT, if you want this repo to be reusable by others)*
