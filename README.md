@@ -51,7 +51,9 @@ Snowflake — SILVER (typed, relational)  →  GOLD (aggregates)
 ```
 dags/                      Airflow DAG(s)
 include/scripts/           Extraction/load logic
+include/secrets/           RSA key pair (git-ignored, not committed)
 developer_metrics_dbt/     dbt project (Silver/Gold layer, in progress)
+sql/snowflake_setup.sql    One-shot Snowflake bootstrap (role/user/grants)
 Dockerfile                 Astro Runtime image
 requirements.txt           Python dependencies
 packages.txt               OS-level build dependencies
@@ -61,23 +63,35 @@ packages.txt               OS-level build dependencies
 ## Setup
 
 1. Install the [Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli) and Docker.
-2. Copy `.env.example` to `.env` and fill in your Snowflake and GitHub credentials.
-3. Generate an RSA key pair from the repository root. Keep the private key local and never commit it:
+2. Copy `.env.example` to `.env` and fill in your GitHub token and Snowflake connection details. Leave `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` empty unless you encrypt the private key; the private key path is already filled in and matches step 3 below.
+3. Generate an RSA key pair. Keep the private key local and never commit it:
    ```bash
+   mkdir -p include/secrets
    openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM \
      -out include/secrets/snowflake_rsa_key.p8 -nocrypt
    openssl rsa -in include/secrets/snowflake_rsa_key.p8 \
-     -pubout -out secrets/snowflake_rsa_key.pub
-   chmod 600 include/secrets/snowflake_rsa_key.p8
+     -pubout -out include/secrets/snowflake_rsa_key.pub
+   chmod 644 include/secrets/snowflake_rsa_key.p8
    ```
-4. As a Snowflake administrator, register the public key for the service user. Copy the contents of `secrets/snowflake_rsa_key.pub` without the `BEGIN` and `END` lines:
-   ```sql
-   ALTER USER <SNOWFLAKE_USER> ADD KEY PAIR developer_metrics_pipeline
-     PUBLIC_KEY = '<public-key-body>';
+   `chmod 644` (not the usual `600`) is required here: Airflow's container
+   runs as a non-root user whose UID doesn't match your host user, so a
+   stricter `600` makes the file unreadable inside the container. `644`
+   means the key is world-readable on your local machine, an acceptable
+   trade-off for local development on a single-user machine. For a shared
+   or production host, match the container's UID instead of loosening the
+   mode (`chown <container-uid> include/secrets/snowflake_rsa_key.p8` with
+   mode `600`, or mount the key via a proper secrets manager).
+4. As a Snowflake administrator, run [`sql/snowflake_setup.sql`](sql/snowflake_setup.sql)
+   to create the service role, user, and grants. It needs the public key body
+   from `include/secrets/snowflake_rsa_key.pub`, stripped of its `BEGIN`/`END`
+   lines:
+   ```bash
+   grep -v -- "-----" include/secrets/snowflake_rsa_key.pub | tr -d '\n'
    ```
-   The private key must match the registered public key. The command above creates an unencrypted key, so leave `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` empty. If you use an encrypted private key, set its passphrase in `.env`.
+   Paste that output into the script where indicated, along with your actual
+   warehouse name (`SHOW WAREHOUSES;` if you're not sure what's available).
 5. Run `astro dev start`.
-6. Open the Airflow UI, unpause `github_events_to_snowflake_bronze`, and trigger a run.
+6. Open the Airflow UI (default local login: `admin` / `admin`), unpause `github_events_to_snowflake_bronze`, and trigger a run.
 
 ## Roadmap
 
